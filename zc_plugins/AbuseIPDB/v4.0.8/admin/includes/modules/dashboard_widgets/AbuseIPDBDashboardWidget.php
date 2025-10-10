@@ -73,7 +73,7 @@ if (!zen_is_superuser() && !check_page(FILENAME_ORDERS, '')) return;
         <!-- Original layout: Contributor badge only -->
         <div class="panel-body" style="text-align: center;">
           <a href="https://www.abuseipdb.com/user/<?php echo ABUSEIPDB_USERID; ?>" target="_blank" title="AbuseIPDB is an IP address blacklist for webmasters and sysadmins to report IP addresses engaging in abusive behavior on their networks">
-            <img src="https://www.abuseipdb.com/contributor/<?php echo ABUSEIPDB_USERID; ?>.svg" alt="AbuseIPDB Contributor Badge" style="width: 401px; box-shadow: 2px 2px 1px 1px rgba(0, 0, 0, .2);">
+            <img src="https://www.abuseipdb.com/contributor/<?php echo ABUSEIPDB_USERID; ?>.svg" alt="AbuseIPDB Contributor Badge" style="width: 401px; max-width: 100%; box-shadow: 2px 2px 1px 1px rgba(0, 0, 0, .2);">
           </a>
         </div>
       <?php
@@ -100,14 +100,14 @@ if (!zen_is_superuser() && !check_page(FILENAME_ORDERS, '')) return;
       ?>
         <!-- Blocked IPs Count -->
         <div class="row">
-          <div class="col-12 text-center mb-3">
-            <img src="https://img.shields.io/badge/Blocked%20Session%20IPs%20in%20.htaccess-<?php echo $blocked_ip_count; ?>-darkred?style=flat-square&color=red&scale=2" alt="Blocked Session IPs in .htaccess" height="35">
+          <div class="col-12 text-center" style="background: #555;">
+            <img src="https://img.shields.io/badge/Blocked%20Session%20IPs%20in%20.htaccess-<?php echo $blocked_ip_count; ?>-darkred?style=flat-square&color=red&scale=2" alt="Blocked Session IPs in .htaccess" style="height:35px;max-width: 100%;">
           </div>
         </div>
 
         <!-- Recent Session Blocks -->
         <div class="row">
-          <div class="col-12">
+          <div class="col-12" style="border: 1px solid #ddd;border-radius: 4px;border-collapse: collapse;padding: 0 7px;">
             <h5 class="card-title">Recent Session Blocks</h5>
             <?php if (empty($recent_blocks)) { ?>
               <p class="text-muted">No recent session blocks recorded.</p>
@@ -123,9 +123,9 @@ if (!zen_is_superuser() && !check_page(FILENAME_ORDERS, '')) return;
 
         <?php if (zen_not_null(ABUSEIPDB_USERID)) { ?>
           <!-- Contributor Badge (for new layout) -->
-          <div class="mt-3 text-end" style="float: right;">
+          <div class="text-center" style="border: 1px solid #ddd; border-radius: 4px; box-shadow: 1px 1px 2px rgba(0,0,0,0.1);">
             <a href="https://www.abuseipdb.com/user/<?php echo ABUSEIPDB_USERID; ?>" target="_blank" title="AbuseIPDB is an IP address blacklist for webmasters and sysadmins to report IP addresses engaging in abusive behavior on their networks">
-              <img src="https://www.abuseipdb.com/contributor/<?php echo ABUSEIPDB_USERID; ?>.svg" alt="AbuseIPDB Contributor Badge" style="width: 200px; border: 1px solid #ddd; border-radius: 4px; box-shadow: 1px 1px 2px rgba(0,0,0,0.1);">
+              <img src="https://www.abuseipdb.com/contributor/<?php echo ABUSEIPDB_USERID; ?>.svg" alt="AbuseIPDB Contributor Badge" style="width: 401px; max-width: 100%;">
             </a>
           </div>
         <?php } ?>
