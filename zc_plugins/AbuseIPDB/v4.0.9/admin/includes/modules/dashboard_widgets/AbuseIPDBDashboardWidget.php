@@ -6,8 +6,8 @@
  * @author      Marcopolo
  * @copyright   2023-2025
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.5
- * @updated     5-25-2025
+ * @version     4.0.9
+ * @updated     10-11-2025
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
 if (!zen_is_superuser() && !check_page(FILENAME_ORDERS, '')) return;

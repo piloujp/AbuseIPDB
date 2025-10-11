@@ -6,10 +6,19 @@
  * @author      Marcopolo
  * @copyright   2023-2025
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.7
- * @updated     6-8-2025
+ * @version     4.0.9
+ * @updated     10-11-2025
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
+
+/**
+ * Toggle for testing:
+ * When true, we bypass the external API call and force score = -1 (API exhausted simulation).
+ * This allows testing flood behavior without editing/commenting code.
+ */
+if (!defined('ABUSEIPDB_API_BYPASS')) {
+    define('ABUSEIPDB_API_BYPASS', false); // <-- set to true to bypass API and simulate -1
+}
 
 class abuseipdb_observer extends base {
 
@@ -233,7 +242,9 @@ class abuseipdb_observer extends base {
             $ip_info = $db->Execute($ip_query);
 
             if ($debug_mode == true) {
-                error_log("Cache check for IP: $ip, found: " . (!$ip_info->EOF ? 'yes' : 'no') . ", expired: " . (!$ip_info->EOF && (time() - strtotime($ip_info->fields['timestamp'])) >= $cache_time ? 'yes' : 'no') . ", score: " . (!$ip_info->EOF ? $ip_info->fields['score'] : 'none'));
+                error_log("Cache check for IP: $ip, found: " . (!$ip_info->EOF ? 'yes' : 'no') . ", expired: " .
+                    (!$ip_info->EOF && (time() - strtotime($ip_info->fields['timestamp'])) >= $cache_time ? 'yes' : 'no') .
+                    ", score: " . (!$ip_info->EOF ? $ip_info->fields['score'] : 'none'));
             }
 
             // If the IP is in the database and the cache has not expired, AND the score is valid
@@ -250,7 +261,7 @@ class abuseipdb_observer extends base {
                      && (time() - strtotime($ip_info->fields['timestamp'])) < $cache_time)
                 )
             ) {
-                $abuseScore = $ip_info->fields['score'];
+                $abuseScore = (int)$ip_info->fields['score'];
                 $countryCode = $ip_info->fields['country_code'] ?? '';
 
                 if ($debug_mode == true) {
@@ -392,14 +403,21 @@ class abuseipdb_observer extends base {
                     }
                 }
             } else {
-                // Make the API call
+                // Make the API call (or bypass)
                 if ($debug_mode == true) {
                     error_log("Entering API path for IP: $ip, cache found: " . (!$ip_info->EOF ? 'yes' : 'no'));
                 }
+
+                if (ABUSEIPDB_API_BYPASS === true) {
+                    // Simulate exhausted API
+                    $abuseScore = -1;
+                    $countryCode = '';
+                } else {
                 list($abuseScore, $countryCode) = getAbuseConfidenceScore($ip, $api_key);
 
                 if ($abuseScore === -1 || empty($countryCode)) {
                     $countryCode = '';
+                    }
                 }
 
                 // If the IP is in the database, update the score and timestamp
@@ -421,8 +439,11 @@ class abuseipdb_observer extends base {
                 }
 
                 if ($debug_mode == true) {
-                    error_log('Used API for IP: ' . $ip . ' with score: ' . $abuseScore);
+                    error_log('Used API for IP: ' . $ip . ' with score: ' . $abuseScore . ' (bypass=' . (ABUSEIPDB_API_BYPASS ? 'true' : 'false') . ')');
                 }
+
+                // Re-read the cache row to get current flood flags (for seeding-once logic)
+                $ip_info_after = $db->Execute("SELECT * FROM " . TABLE_ABUSEIPDB_CACHE . " WHERE ip = '" . zen_db_input($ip) . "'");
 
                 // Prepare prefixes for flood tracking
                 $ipParts = explode('.', $ip);
@@ -432,12 +453,51 @@ class abuseipdb_observer extends base {
                     $prefix3 = $prefix2 . '.' . $ipParts[2];
                 }
 
-                // Check session rate limiting
+                // Check session rate limiting (always applies)
                 if (ABUSEIPDB_SESSION_RATE_LIMIT_ENABLED == 'true') {
                     checkSessionRateLimit($ip);
                 }
 
-                // Flood tracking
+                /**
+                 * FLOOD LOGIC WHEN score == -1:
+                 * - Seed flood rows once (like score 0+) using the same reset flags.
+                 * - Do NOT perform flood-based blocking while score == -1.
+                 */
+                if ((int)$abuseScore === -1) {
+                    // Compute "should seed" using the same flags
+                    $shouldFloodTrack2Octet = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_2octet']) || (int)$ip_info_after->fields['flood_tracked_reset_2octet'] === 0;
+                    $shouldFloodTrack3Octet = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_3octet']) || (int)$ip_info_after->fields['flood_tracked_reset_3octet'] === 0;
+                    $shouldFloodTrackCountry = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_country']) || (int)$ip_info_after->fields['flood_tracked_reset_country'] === 0;
+                    $shouldFloodTrackForeign = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_foreign']) || (int)$ip_info_after->fields['flood_tracked_reset_foreign'] === 0;
+
+                    if ($shouldFloodTrack2Octet || $shouldFloodTrack3Octet || $shouldFloodTrackCountry || $shouldFloodTrackForeign) {
+                        updateFloodTracking($ip, $countryCode);
+
+                        // Mark flags so we don't re-seed on refresh
+                        $updateFields = array("flood_tracked = 1");
+                        if ($shouldFloodTrack2Octet) {
+                            $updateFields[] = "flood_tracked_reset_2octet = 1";
+                        }
+                        if ($shouldFloodTrack3Octet) {
+                            $updateFields[] = "flood_tracked_reset_3octet = 1";
+                        }
+                        if ($shouldFloodTrackCountry) {
+                            $updateFields[] = "flood_tracked_reset_country = 1";
+                        }
+                        if ($shouldFloodTrackForeign) {
+                            $updateFields[] = "flood_tracked_reset_foreign = 1";
+                        }
+                        $db->Execute("UPDATE " . TABLE_ABUSEIPDB_CACHE . " SET " . implode(', ', $updateFields) . " WHERE ip = '" . zen_db_input($ip) . "'");
+                    }
+
+                    // IMPORTANT: No flood-based blocking while score == -1
+                    // (Return here to skip the block checks below.)
+                    return;
+                }
+
+                // ===== Normal (score >= 0) flood tracking & blocking =====
+
+                // Flood tracking (normal path)
                 updateFloodTracking($ip, $countryCode);
                 $db->Execute(
                     "UPDATE " . TABLE_ABUSEIPDB_CACHE . " 
@@ -525,11 +585,11 @@ class abuseipdb_observer extends base {
                 }
 
                 if ($abuseScore >= $threshold) {
-                    $log_file_path = ABUSEIPDB_LOG_FILE_PATH . $log_file_name;
-                    $log_message = date('Y-m-d H:i:s') . ' IP address ' . $ip . ' blocked by AbuseIPDB from API call with score: ' . $abuseScore . PHP_EOL;
+                    $log_file_path_block = ABUSEIPDB_LOG_FILE_PATH . $log_file_name;
+                    $log_message_block = date('Y-m-d H:i:s') . ' IP address ' . $ip . ' blocked by AbuseIPDB from API call with score: ' . $abuseScore . PHP_EOL;
 
                     if ($enable_logging) {
-                        file_put_contents($log_file_path, $log_message, FILE_APPEND);
+                        file_put_contents($log_file_path_block, $log_message_block, FILE_APPEND);
                     }
 
                     if ($redirect_option === 'page_not_found') {
