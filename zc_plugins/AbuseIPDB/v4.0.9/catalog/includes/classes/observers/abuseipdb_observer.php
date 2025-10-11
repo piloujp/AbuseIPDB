@@ -198,7 +198,7 @@ class abuseipdb_observer extends base {
             // If the IP is not found in the array, check in the file, only if ABUSEIPDB_BLACKLIST_ENABLE is true
             if (!$ip_blocked && $blacklist_enable) {
                 foreach ($file_blocked_ips as $blocked_ip) {
-                    if (strpos($ip, $blocked_ip) === 0) { // if the current IP starts with the blocked IP
+                    if (strpos($ip, $blocked_ip) === 0) { // starts with subnet/prefix
                         $ip_blocked = true;
                         break;
                     }
@@ -420,6 +420,12 @@ class abuseipdb_observer extends base {
                     }
                 }
 
+                // preserve an existing country if API returns empty (don’t clobber)
+                $existingCountry = (!$ip_info->EOF && !empty($ip_info->fields['country_code'])) ? $ip_info->fields['country_code'] : '';
+                if ($countryCode === '') {
+                    $countryCode = $existingCountry;
+                }
+
                 // If the IP is in the database, update the score and timestamp
                 if (!$ip_info->EOF) {
                     $update_query = "UPDATE " . TABLE_ABUSEIPDB_CACHE . " SET score = " . (int)$abuseScore . ", country_code = '" . zen_db_input($countryCode) . "', timestamp = NOW() WHERE ip = '" . zen_db_input($ip) . "'";
@@ -442,10 +448,10 @@ class abuseipdb_observer extends base {
                     error_log('Used API for IP: ' . $ip . ' with score: ' . $abuseScore . ' (bypass=' . (ABUSEIPDB_API_BYPASS ? 'true' : 'false') . ')');
                 }
 
-                // Re-read the cache row to get current flood flags (for seeding-once logic)
+                // Re-read the cache row to get current flood flags (for seed-once logic)
                 $ip_info_after = $db->Execute("SELECT * FROM " . TABLE_ABUSEIPDB_CACHE . " WHERE ip = '" . zen_db_input($ip) . "'");
 
-                // Prepare prefixes for flood tracking
+                // Prepare prefixes for flood checks
                 $ipParts = explode('.', $ip);
                 $prefix2 = $prefix3 = '';
                 if (count($ipParts) === 4) {
@@ -461,37 +467,107 @@ class abuseipdb_observer extends base {
                 /**
                  * FLOOD LOGIC WHEN score == -1:
                  * - Seed flood rows once (like score 0+) using the same reset flags.
-                 * - Do NOT perform flood-based blocking while score == -1.
+                 * - Then perform READ-ONLY flood blocking checks (no increments).
                  */
                 if ((int)$abuseScore === -1) {
+                    // Use stored country if we have it (API might be exhausted)
+                    $storedCountry = (!$ip_info_after->EOF && !empty($ip_info_after->fields['country_code'])) ? $ip_info_after->fields['country_code'] : '';
+
                     // Compute "should seed" using the same flags
                     $shouldFloodTrack2Octet = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_2octet']) || (int)$ip_info_after->fields['flood_tracked_reset_2octet'] === 0;
                     $shouldFloodTrack3Octet = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_3octet']) || (int)$ip_info_after->fields['flood_tracked_reset_3octet'] === 0;
                     $shouldFloodTrackCountry = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_country']) || (int)$ip_info_after->fields['flood_tracked_reset_country'] === 0;
                     $shouldFloodTrackForeign = $ip_info_after->EOF || !isset($ip_info_after->fields['flood_tracked_reset_foreign']) || (int)$ip_info_after->fields['flood_tracked_reset_foreign'] === 0;
 
-                    if ($shouldFloodTrack2Octet || $shouldFloodTrack3Octet || $shouldFloodTrackCountry || $shouldFloodTrackForeign) {
-                        updateFloodTracking($ip, $countryCode);
-
-                        // Mark flags so we don't re-seed on refresh
+                    // Seed once (only if not already seeded)
+                    if ($shouldFloodTrack2Octet || $shouldFloodTrack3Octet || ($shouldFloodTrackCountry && $storedCountry !== '') || ($shouldFloodTrackForeign && $storedCountry !== '')) {
+                        updateFloodTracking($ip, $storedCountry);
                         $updateFields = array("flood_tracked = 1");
-                        if ($shouldFloodTrack2Octet) {
-                            $updateFields[] = "flood_tracked_reset_2octet = 1";
-                        }
-                        if ($shouldFloodTrack3Octet) {
-                            $updateFields[] = "flood_tracked_reset_3octet = 1";
-                        }
-                        if ($shouldFloodTrackCountry) {
-                            $updateFields[] = "flood_tracked_reset_country = 1";
-                        }
-                        if ($shouldFloodTrackForeign) {
-                            $updateFields[] = "flood_tracked_reset_foreign = 1";
-                        }
+                        if ($shouldFloodTrack2Octet) $updateFields[] = "flood_tracked_reset_2octet = 1";
+                        if ($shouldFloodTrack3Octet) $updateFields[] = "flood_tracked_reset_3octet = 1";
+                        if ($shouldFloodTrackCountry)  $updateFields[] = "flood_tracked_reset_country = 1";
+                        if ($shouldFloodTrackForeign)  $updateFields[] = "flood_tracked_reset_foreign = 1";
                         $db->Execute("UPDATE " . TABLE_ABUSEIPDB_CACHE . " SET " . implode(', ', $updateFields) . " WHERE ip = '" . zen_db_input($ip) . "'");
                     }
 
-                    // IMPORTANT: No flood-based blocking while score == -1
-                    // (Return here to skip the block checks below.)
+                    // READ-ONLY flood blocking (treat -1 like score 0)
+                    $flood_block = false;
+                    $country_min_score = defined('ABUSEIPDB_FLOOD_COUNTRY_MIN_SCORE') ? (int)ABUSEIPDB_FLOOD_COUNTRY_MIN_SCORE : 0;
+                    $foreign_min_score = defined('ABUSEIPDB_FLOOD_FOREIGN_MIN_SCORE') ? (int)ABUSEIPDB_FLOOD_FOREIGN_MIN_SCORE : 0;
+                    $effectiveScore = 0; // -1 behaves like 0 for min-score gates
+
+                    if (ABUSEIPDB_FLOOD_2OCTET_ENABLED == 'true' && $prefix2) {
+                        $res2 = $db->Execute("SELECT count FROM " . TABLE_ABUSEIPDB_FLOOD . " WHERE prefix = '" . zen_db_input($prefix2) . "' AND prefix_type = '2'");
+                        if (!$res2->EOF && $res2->fields['count'] >= (int)ABUSEIPDB_FLOOD_2OCTET_THRESHOLD) {
+                            $flood_block = true;
+                        }
+                    }
+
+                    if (ABUSEIPDB_FLOOD_3OCTET_ENABLED == 'true' && $prefix3) {
+                        $res3 = $db->Execute("SELECT count FROM " . TABLE_ABUSEIPDB_FLOOD . " WHERE prefix = '" . zen_db_input($prefix3) . "' AND prefix_type = '3'");
+                        if (!$res3->EOF && $res3->fields['count'] >= (int)ABUSEIPDB_FLOOD_3OCTET_THRESHOLD) {
+                            $flood_block = true;
+                        }
+                    }
+
+                    if (ABUSEIPDB_FLOOD_COUNTRY_ENABLED == 'true' && $storedCountry !== '') {
+                        $country_reset_minutes = defined('ABUSEIPDB_FLOOD_COUNTRY_RESET') ? (int) ABUSEIPDB_FLOOD_COUNTRY_RESET : 60;
+                        $resCountry = $db->Execute("SELECT count, timestamp FROM " . TABLE_ABUSEIPDB_FLOOD . " WHERE prefix = '" . zen_db_input($storedCountry) . "' AND prefix_type = 'country'");
+                        if (
+                            !$resCountry->EOF &&
+                            $resCountry->fields['count'] >= (int) ABUSEIPDB_FLOOD_COUNTRY_THRESHOLD &&
+                            strtotime($resCountry->fields['timestamp']) >= (time() - ($country_reset_minutes * 60))
+                        ) {
+                            if ($effectiveScore >= $country_min_score) {
+                                $flood_block = true;
+                            }
+                        }
+                    }
+
+                    if ($debug_mode == true) {
+                        error_log("(-1) Checking foreign flood for IP: $ip, country: $storedCountry, effScore: $effectiveScore");
+                    }
+                    if (ABUSEIPDB_FOREIGN_FLOOD_ENABLED == 'true' && $storedCountry !== '') {
+                        $default_country = defined('ABUSEIPDB_DEFAULT_COUNTRY') ? ABUSEIPDB_DEFAULT_COUNTRY : '';
+                        $foreign_reset_minutes = defined('ABUSEIPDB_FLOOD_FOREIGN_RESET') ? (int)ABUSEIPDB_FLOOD_FOREIGN_RESET : 60;
+                        if ($default_country !== '' && strcasecmp($storedCountry, $default_country) !== 0) {
+                            $resForeign = $db->Execute("SELECT count, timestamp FROM " . TABLE_ABUSEIPDB_FLOOD . " WHERE prefix = '" . zen_db_input($storedCountry) . "' AND prefix_type = 'country'");
+                            if (
+                                !$resForeign->EOF &&
+                                $resForeign->fields['count'] >= (int)ABUSEIPDB_FOREIGN_FLOOD_THRESHOLD &&
+                                strtotime($resForeign->fields['timestamp']) >= (time() - ($foreign_reset_minutes * 60))
+                            ) {
+                                if ($effectiveScore >= $foreign_min_score) {
+                                    $flood_block = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (defined('ABUSEIPDB_BLOCKED_COUNTRIES') && !empty(ABUSEIPDB_BLOCKED_COUNTRIES) && $storedCountry !== '') {
+                        $blockedCountries = array_map('trim', explode(',', ABUSEIPDB_BLOCKED_COUNTRIES));
+                        if (in_array(strtoupper($storedCountry), $blockedCountries)) {
+                            $flood_block = true;
+                        }
+                    }
+
+                    if ($flood_block) {
+                        $log_file_path_flood = ABUSEIPDB_LOG_FILE_PATH . $log_file_name;
+                        $log_message_flood = date('Y-m-d H:i:s') . " IP address $ip blocked by Flood/Foreign/Country Protection (-1 read-only).". PHP_EOL;
+                        if ($enable_logging) {
+                            file_put_contents($log_file_path_flood, $log_message_flood, FILE_APPEND);
+                        }
+                        if ($redirect_option === 'page_not_found') {
+                            header('Location: /index.php?main_page=page_not_found');
+                            exit();
+                        } elseif ($redirect_option === 'forbidden') {
+                            header('HTTP/1.0 403 Forbidden');
+                            exit();
+                        }
+                    }
+
+                    // DO NOT do threshold-based AbuseIPDB blocking when score == -1
+                    // (Only flood-based blocking above.)
                     return;
                 }
 
@@ -513,6 +589,13 @@ class abuseipdb_observer extends base {
                 $flood_block = false;
                 $country_min_score = defined('ABUSEIPDB_FLOOD_COUNTRY_MIN_SCORE') ? (int)ABUSEIPDB_FLOOD_COUNTRY_MIN_SCORE : 0;
                 $foreign_min_score = defined('ABUSEIPDB_FLOOD_FOREIGN_MIN_SCORE') ? (int)ABUSEIPDB_FLOOD_FOREIGN_MIN_SCORE : 0;
+
+                $ipParts = explode('.', $ip);
+                $prefix2 = $prefix3 = '';
+                if (count($ipParts) === 4) {
+                    $prefix2 = $ipParts[0] . '.' . $ipParts[1];
+                    $prefix3 = $prefix2 . '.' . $ipParts[2];
+                }
 
                 if (ABUSEIPDB_FLOOD_2OCTET_ENABLED == 'true' && $prefix2) {
                     $res2 = $db->Execute("SELECT count FROM " . TABLE_ABUSEIPDB_FLOOD . " WHERE prefix = '" . zen_db_input($prefix2) . "' AND prefix_type = '2'");
