@@ -35,8 +35,10 @@ function getAbuseConfidenceScore($ip, $api_key) {
     // Get the HTTP status code
     $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
-    // Close the cURL session
-    curl_close($curl);
+    // Close the cURL session (not needed in PHP 8.0+ where CurlHandle is auto-closed)
+    if (PHP_VERSION_ID < 80000) {
+        curl_close($curl);
+    }
 
     // Check the HTTP status code
     if ($http_code == 200) {
