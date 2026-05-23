@@ -148,16 +148,16 @@ The `includes/blacklist.txt` file is auto-created on install/upgrade (existing f
 	- The `includes/blacklist.txt` file is auto-created during install/upgrade (existing files preserved).  
 	- To display the 🚫 **Grey Circle with Slash** (blacklist button), the **"Enable IP Blacklist File"** setting must be set to `true` in the configuration.  
 
-11. **Flood Tracking and Flood Blocking (NEW!)**  
+11. **Flood Tracking and Flood Blocking **  
     - Tracks IP hits by 2-octet prefixes (e.g., `192.168`), 3-octet prefixes (e.g., `192.168.1`), and country codes (e.g., `US`, `VN`), blocking IPs if thresholds are exceeded within configurable reset windows (e.g., 1/2 hour).  
     - Country and foreign (non-home country) floods use separate thresholds and minimum score settings (`ABUSEIPDB_FLOOD_COUNTRY_MIN_SCORE`, `ABUSEIPDB_FLOOD_FOREIGN_MIN_SCORE`, default 5) to prevent blocking legitimate traffic.  
     - Administrators can manually block entire countries (e.g., `VN,CN,RU`) via configuration settings for immediate protection.  
 
-12. **Foreign Country Flood Detection (NEW!)**  
+12. **Foreign Country Flood Detection **  
     - You can separately monitor "foreign" traffic — meaning traffic originating outside your store’s configured home country.  
     - If hits from a foreign country exceed the configured threshold, blocking will occur automatically.  
 
-13. **Manual Country Blocking (NEW!)**  
+13. **Manual Country Blocking **  
     - Administrators can manually specify a list of country codes to instantly block (e.g., `VN,CN,RU`) without waiting for AbuseIPDB scores or flood detection to trigger.  
     - Supports both proactive (manual) and reactive (automatic) defense strategies.  
 
@@ -176,7 +176,7 @@ The `includes/blacklist.txt` file is auto-created on install/upgrade (existing f
       - Manual Blocked Country List  
     - Provides fine-grained control over flood detection, country-level blocking, and API safety margins.  
 
-17. **Session Rate Limiting (NEW!)**  
+17. **Session Rate Limiting **  
     - **Purpose**: Protects your site from bots that rapidly create sessions (e.g., 1000+ in a short time), which can overload the server.  
     - **How It Works**:  
       - Tracks the number of sessions an IP creates within a configurable time window (default: 100 sessions in 60 seconds).  
@@ -241,7 +241,7 @@ This section provides an understanding of the logic steps involved in checking a
       - The database cache is then updated with the new abuse score and timestamp.  
     - c. Skip IP check for known spiders: If the IP is identified as a known spider and the ABUSEIPDB_SPIDER_ALLOW setting is enabled, the IP check and logging steps are skipped for spiders.  
     - d. Spider Logging: If Spider logging is enabled, a separate log file for spiders that bypassed an IP check is created.  
-5. **Flood Tracking and Flood Blocking (NEW!)**: After an IP is cached or updated, the system automatically tracks hits against:  
+5. **Flood Tracking and Flood Blocking **: After an IP is cached or updated, the system automatically tracks hits against:  
     - 2-octet prefixes (e.g., `192.168`)  
     - 3-octet prefixes (e.g., `192.168.1`)  
     - Country codes (e.g., `US`, `VN`)  
