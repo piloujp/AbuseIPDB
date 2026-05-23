@@ -2,12 +2,12 @@
 /**
  * Module: AbuseIPDB
  *
- * @requires    Zen Cart 2.1.0 or later, PHP 7.4+ (recommended: PHP 8.x)
+ * @requires    Zen Cart 2.2.2 or later, PHP 8.5.6+ recommended
  * @author      Marcopolo
- * @copyright   2023-2025
+ * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.9
- * @updated     10-11-2025
+ * @version     4.0.12
+ * @updated     05-23-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
 
@@ -17,9 +17,9 @@ class ScriptedInstaller extends ScriptedInstallBase
 {
     protected string $configGroupTitle = 'AbuseIPDB Configuration';
 
-    public const ABUSEIPDB_CURRENT_VERSION = '4.0.9';
+    public const ABUSEIPDB_CURRENT_VERSION = '4.0.12';
 
-    private const SETTING_COUNT = 51;
+    private const SETTING_COUNT = 53;
     protected int $configurationGroupId;
 
     /**
@@ -62,7 +62,7 @@ class ScriptedInstaller extends ScriptedInstallBase
                 VALUES
 				('Plugin Version', 'ABUSEIPDB_VERSION', '0.0.0', 'The <em>AbuseIPDB</em> installed version.<br>', $this->configurationGroupId, NOW(), 10, NULL, 'zen_cfg_read_only('),
 				('Enable AbuseIPDB?', 'ABUSEIPDB_ENABLED', 'false', '', $this->configurationGroupId, NOW(), 20, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
-				('Total Settings', 'ABUSEIPDB_SETTINGS_COUNT', '0', 'There should be <strong>51 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>', $this->configurationGroupId, NOW(), 25, NULL, 'zen_cfg_read_only('),
+				('Total Settings', 'ABUSEIPDB_SETTINGS_COUNT', '0', 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>', $this->configurationGroupId, NOW(), 25, NULL, 'zen_cfg_read_only('),
 				('AbuseIPDB: API Key', 'ABUSEIPDB_API_KEY', '', 'This is the API key that you created during the set up of this plugin. You can find it on the AbuseIPDB webmaster/API section, <a href=\"https://www.abuseipdb.com/account/api\" target=\"_blank\">here</a> after logging in to AbuseIPDB.<br>', $this->configurationGroupId, NOW(), 30, NULL, NULL),
 				('AbuseIPDB: User ID', 'ABUSEIPDB_USERID', '', 'To find your AbuseIPDB User ID, visit <a href=\"https://www.abuseipdb.com/account/contributor\" target=\"_blank\">this page</a> and look in the \"HTML Markup\" section. Your User ID is the number at the end of the URL shown there — for example, <code>https://www.abuseipdb.com/user/XXXXXX</code>. Just enter the number (e.g., <code>XXXXXX</code>) here.<br>', $this->configurationGroupId, NOW(), 40, NULL, NULL),
 				('Score Threshold', 'ABUSEIPDB_THRESHOLD', '50', 'The minimum AbuseIPDB score to block an IP address.<br>', $this->configurationGroupId, NOW(), 50, NULL, NULL),
@@ -110,6 +110,8 @@ class ScriptedInstaller extends ScriptedInstallBase
 				('Session Rate Limit Window (seconds)', 'ABUSEIPDB_SESSION_RATE_LIMIT_WINDOW', '60', 'Time window in seconds for counting sessions (e.g., 60 seconds).', $this->configurationGroupId, NOW(), 440, NULL, NULL),
 				('Session Rate Limit Reset Window (seconds)', 'ABUSEIPDB_SESSION_RATE_LIMIT_RESET_WINDOW', '300', 'Time in seconds after which the session count resets if no new sessions are created (e.g., 300 seconds = 5 minutes).', $this->configurationGroupId, NOW(), 450, NULL, NULL),
 				('Enable Admin Widget?', 'ABUSEIPDB_WIDGET_ENABLED', 'false', 'Enable Admin Widget?<br><br>(This is an <strong>optional setting</strong>. You must install it separately. Please refer to the module <strong>README</strong> for detailed instructions.)<br>', $this->configurationGroupId, NOW(), 900, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
+				('Defer to External Triage', 'ABUSEIPDB_EXTERNAL_TRIAGE_DEFER', 'false', 'When enabled and a compatible companion plugin is installed, AbuseIPDB defers to the companion\'s triage decision before making an API call. Useful when running alongside another bot-detection system to avoid spending API quota on traffic that has already been challenged or blocked.<br><br>The integration works two ways:<br><strong>1. Per-request defer:</strong> if the companion challenged or blocked the current request, AbuseIPDB skips its API call for that request entirely.<br><strong>2. Persistent defer:</strong> AbuseIPDB also auto-detects the companion\'s deferrals table (advertised by the companion via its <code>AbuseIpdbDeferralHelper</code> class) and checks it for any IP it sees. Recently-deferred IPs render as a gray <em>DF</em> badge in Who\'s Online instead of a stale cached score — no API call burned. Deferral freshness is governed by AbuseIPDB\'s own cache TTL, so stale rows naturally age out.<br><br><strong>Requires:</strong> a companion plugin that registers an <code>AbuseIpdbDeferralHelper</code> class. If no such plugin is installed, this setting has no effect.<br><br>Default: <strong>false</strong>.<br>', $this->configurationGroupId, NOW(), 900, NULL, 'abuseipdb_cfg_external_triage_defer('),
+				('Trust Cloudflare?', 'ABUSEIPDB_TRUST_CLOUDFLARE', 'false', 'When enabled, the real visitor IP is read from the <code>CF-Connecting-IP</code> header that Cloudflare sets at its edge, rather than from <code>REMOTE_ADDR</code> (which would be a Cloudflare edge IP). Required when your site is behind Cloudflare — without it, AbuseIPDB would check, log, and potentially block Cloudflare\'s own edge IPs instead of real visitors.<br><br><strong>SECURITY:</strong> only enable when your server is actually behind Cloudflare AND your firewall/security group restricts inbound traffic to Cloudflare\'s published IP ranges. Without that lockdown, an attacker could connect directly to your origin and forge the <code>CF-Connecting-IP</code> header to spoof any visitor IP.<br><br>Default: <strong>false</strong>.<br>', $this->configurationGroupId, NOW(), 905, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
 				('Enable Debug?', 'ABUSEIPDB_DEBUG', 'false', '', $this->configurationGroupId, NOW(), 910, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),');
                 "
             );
@@ -158,6 +160,9 @@ class ScriptedInstaller extends ScriptedInstallBase
                     KEY idx_block_timestamp (block_timestamp)
                 ) ENGINE=InnoDB"
             );
+
+            // Seed the blacklist file (no-op if it already exists).
+            $this->seedBlacklistFile();
 
             // Register admin page
             zen_deregister_admin_pages(['configAbuseIPDB']);
@@ -229,48 +234,272 @@ class ScriptedInstaller extends ScriptedInstallBase
     }
 
     /**
-     * Function to migrate old .htaccess session blocks to the new format with <Files *>
+     * Seed includes/blacklist.txt on fresh install and on upgrade.
+     *
+     * Behavior:
+     *   - If the file does NOT exist, create it with a header comment.
+     *   - If the file ALREADY EXISTS, leave it alone (admins may have added
+     *     IPs to it; never overwrite).
+     *   - Path comes from ABUSEIPDB_BLACKLIST_FILE_PATH (default
+     *     'includes/blacklist.txt'). The file is resolved relative to
+     *     DIR_FS_CATALOG.
+     *   - Uninstall does NOT remove the file — preserves admin's blacklist.
+     *
+     * Returns true on success or when the file already exists. Returns
+     * false only if creation failed (permissions, etc.) — logged, but
+     * doesn't abort install/upgrade.
+     */
+    private function seedBlacklistFile(): bool
+    {
+        // Resolve the configured path. Fall back to the default if the
+        // constant isn't defined yet (install-time race).
+        $relative_path = defined('ABUSEIPDB_BLACKLIST_FILE_PATH')
+            ? ABUSEIPDB_BLACKLIST_FILE_PATH
+            : 'includes/blacklist.txt';
+        $blacklist_file = DIR_FS_CATALOG . $relative_path;
+
+        // Already exists? Leave it alone.
+        if (file_exists($blacklist_file)) {
+            return true;
+        }
+
+        // Create the parent directory if missing (defensive — should already
+        // exist since 'includes/' ships with Zen Cart).
+        $parent_dir = dirname($blacklist_file);
+        if (!is_dir($parent_dir)) {
+            if (!@mkdir($parent_dir, 0755, true)) {
+                error_log('AbuseIPDB: could not create blacklist parent directory: ' . $parent_dir);
+                return false;
+            }
+        }
+
+        // Write the seed file with a usage header.
+        $header = "# AbuseIPDB blacklist file" . PHP_EOL
+                . "# One IP address per line. Lines starting with # are ignored." . PHP_EOL
+                . "# Requires ABUSEIPDB_BLACKLIST_ENABLE = true to take effect." . PHP_EOL
+                . PHP_EOL;
+
+        if (@file_put_contents($blacklist_file, $header) === false) {
+            error_log('AbuseIPDB: could not create blacklist file at: ' . $blacklist_file);
+            return false;
+        }
+
+        // Permissions — readable by web user, writable by admin updates
+        // (the "blacklist this IP" button in admin appends to this file).
+        @chmod($blacklist_file, 0644);
+
+        return true;
+    }
+
+    /**
+     * Migrate .htaccess from Apache 2.2 syntax (Deny from + <Files *>) to
+     * Apache 2.4 syntax (Require not ip + <RequireAll>).
+     *
      */
     private function migrateHtaccessSessionBlocks(): bool
     {
         $htaccess_file = DIR_FS_CATALOG . '.htaccess';
-        if (!file_exists($htaccess_file) || !is_writable($htaccess_file)) {
-            error_log('Failed to migrate .htaccess session blocks to the new format: File does not exist or is not writable at ' . $htaccess_file);
+
+        // No file? Nothing to migrate. Silent success.
+        if (!file_exists($htaccess_file)) {
+            return true;
+        }
+
+        $original = @file_get_contents($htaccess_file);
+        if ($original === false) {
+            // File exists but we couldn't read it. Log and bail — but only
+            // here, not on writability, because the file may simply have
+            // nothing to migrate (in which case writability is irrelevant).
+            error_log('AbuseIPDB migration: could not read .htaccess at ' . $htaccess_file);
             return false;
         }
 
-        $htaccess_content = file_get_contents($htaccess_file);
-        
-        // Old markers (without <Files *>)
-        $old_start_marker = "# AbuseIPDB Session Blocks Start\n";
-        $old_end_marker = "# AbuseIPDB Session Blocks End\n";
-        
-        // New markers (with <Files *>)
-        $new_start_marker = "<Files *>\n# AbuseIPDB Session Blocks Start\n";
-        $new_end_marker = "# AbuseIPDB Session Blocks End\n</Files>\n";
-        
-        // Check if the old-style section exists (not wrapped in <Files *>)
-        $start_pos = strpos($htaccess_content, $old_start_marker);
-        $end_pos = strpos($htaccess_content, $old_end_marker, $start_pos);
-        
-        if ($start_pos !== false && $end_pos !== false) {
-            // Extract the section content (the Deny from rules)
-            $section_content = substr($htaccess_content, $start_pos + strlen($old_start_marker), $end_pos - $start_pos - strlen($old_start_marker));
-            
-            // Check if the section is already wrapped in <Files *>
-            $before_start = substr($htaccess_content, max(0, $start_pos - 10), 10);
-            $after_end = substr($htaccess_content, $end_pos + strlen($old_end_marker), 10);
-            if (strpos($before_start, "<Files *>") === false && strpos($after_end, "</Files>") === false) {
-                // Replace the old section with the new format
-                $new_section = $new_start_marker . $section_content . $new_end_marker;
-                $htaccess_content = substr($htaccess_content, 0, $start_pos) . $new_section . substr($htaccess_content, $end_pos + strlen($old_end_marker));
-                
-                // Write back to .htaccess
-                return file_put_contents($htaccess_file, $htaccess_content);
+        // ------------------------------------------------------------------
+        // Step 1: locate any old-format <Files *> AbuseIPDB Deny block.
+        // ------------------------------------------------------------------
+        // The pattern: <Files *> ... # AbuseIPDB Session Blocks Start ...
+        //   Deny from <ip> ... # AbuseIPDB Session Blocks End ... </Files>
+        // Whitespace flexible, /s for multiline.
+        $old_block_pattern = '/(\n?)(<Files\s*\*>\s*)(.*?)(# AbuseIPDB Session Blocks Start\s*\n)(.*?)(# AbuseIPDB Session Blocks End\s*\n)(.*?)(<\/Files>\s*\n?)/s';
+
+        if (!preg_match($old_block_pattern, $original, $m)) {
+            // No old-format block found. Already on modern syntax or never
+            // had AbuseIPDB blocks. Nothing to migrate. Silent success —
+            // writability is irrelevant when we have nothing to write.
+            return true;
+        }
+
+        // From here on we DO need to write. NOW check writability and log
+        // a meaningful error if the file (or parent dir for the backup)
+        // isn't writable — because at this point we have actual work to do
+        // and the operator needs to know it didn't happen.
+        if (!is_writable($htaccess_file)) {
+            error_log('AbuseIPDB migration: old <Files *> Deny block detected but .htaccess is not writable at ' . $htaccess_file . ' — fix file permissions and re-run the upgrade to complete the migration.');
+            return false;
+        }
+
+        // Extract the Deny-from IPs from the old block content
+        $deny_content = $m[5];
+        $deny_ips = [];
+        if (preg_match_all('/^\s*Deny\s+from\s+(\S+)\s*$/mi', $deny_content, $ip_matches)) {
+            foreach ($ip_matches[1] as $ip) {
+                $ip = trim($ip);
+                if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                    $deny_ips[] = $ip;
+                }
             }
         }
-        
-        return true; // No migration needed or already in the correct format
+        // De-duplicate while preserving order
+        $deny_ips = array_values(array_unique($deny_ips));
+
+        // ------------------------------------------------------------------
+        // Step 2: remove the old <Files> block from the content.
+        // ------------------------------------------------------------------
+        $without_old = preg_replace($old_block_pattern, '', $original, 1);
+        if ($without_old === null) {
+            error_log('AbuseIPDB migration: regex error removing old <Files> block');
+            return false;
+        }
+
+        // ------------------------------------------------------------------
+        // Step 3: figure out where to put the converted IPs.
+        // ------------------------------------------------------------------
+        // Build the Require lines (or empty if there were no IPs to move).
+        $require_lines = '';
+        foreach ($deny_ips as $ip) {
+            $require_lines .= "    Require not ip $ip\n";
+        }
+
+        $modified = null;
+
+        if (!empty($deny_ips)) {
+            // Case A: existing <RequireAll> with AbuseIPDB markers inside.
+            $case_a_pattern = '/(<RequireAll>)(.*?)(# AbuseIPDB Session Blocks Start\s*\n)(.*?)(# AbuseIPDB Session Blocks End\s*\n)(.*?)(<\/RequireAll>)/s';
+            if (preg_match($case_a_pattern, $without_old)) {
+                $modified = preg_replace_callback($case_a_pattern, function($m) use ($require_lines) {
+                    // Insert the new lines just before the End marker, after
+                    // any existing entries already in the section.
+                    $inner = $m[4];
+                    if (!empty($inner) && substr($inner, -1) !== "\n") {
+                        $inner .= "\n";
+                    }
+                    return $m[1] . $m[2] . $m[3] . $inner . $require_lines . $m[5] . $m[6] . $m[7];
+                }, $without_old, 1);
+            }
+            // Case B: <RequireAll> exists but no AbuseIPDB markers inside.
+            elseif (preg_match('/<RequireAll>.*?<\/RequireAll>/s', $without_old)) {
+                $case_b_pattern = '/(<RequireAll>)(.*?)(<\/RequireAll>)/s';
+                $modified = preg_replace_callback($case_b_pattern, function($m) use ($require_lines) {
+                    $inner = $m[2];
+                    if (!empty($inner) && substr($inner, -1) !== "\n") {
+                        $inner .= "\n";
+                    }
+                    return $m[1]
+                        . $inner
+                        . "    # AbuseIPDB Session Blocks Start\n"
+                        . $require_lines
+                        . "    # AbuseIPDB Session Blocks End\n"
+                        . $m[3];
+                }, $without_old, 1);
+            }
+            // Case C: no <RequireAll> block — create one.
+            else {
+                $new_block = "\n<RequireAll>\n"
+                    . "    Require all granted\n"
+                    . "    # AbuseIPDB Session Blocks Start\n"
+                    . $require_lines
+                    . "    # AbuseIPDB Session Blocks End\n"
+                    . "</RequireAll>\n";
+
+                if (preg_match('/(RewriteEngine\s+[Oo]n\s*\n)/', $without_old, $rm, PREG_OFFSET_CAPTURE)) {
+                    $insert_pos = $rm[0][1] + strlen($rm[0][0]);
+                    $modified = substr($without_old, 0, $insert_pos) . $new_block . substr($without_old, $insert_pos);
+                } else {
+                    $modified = rtrim($without_old) . "\n" . $new_block;
+                }
+            }
+        } else {
+            // Old block existed but was empty. Just remove it.
+            $modified = $without_old;
+        }
+
+        if ($modified === null) {
+            error_log('AbuseIPDB migration: failed to construct modified content');
+            return false;
+        }
+
+        // ------------------------------------------------------------------
+        // Step 4: validate before writing.
+        // ------------------------------------------------------------------
+        // Files and RequireAll tags must balance. If they don't, our edit
+        // produced broken content — refuse to write.
+        $files_open = substr_count($modified, '<Files ');
+        $files_close = substr_count($modified, '</Files>');
+        $reqall_open = substr_count($modified, '<RequireAll>');
+        $reqall_close = substr_count($modified, '</RequireAll>');
+
+        if ($files_open !== $files_close) {
+            error_log("AbuseIPDB migration: aborting — would produce unbalanced <Files> tags (open=$files_open close=$files_close).");
+            return false;
+        }
+        if ($reqall_open !== $reqall_close) {
+            error_log("AbuseIPDB migration: aborting — would produce unbalanced <RequireAll> tags (open=$reqall_open close=$reqall_close).");
+            return false;
+        }
+
+        // ------------------------------------------------------------------
+        // Step 5: backup the original, then write.
+        // ------------------------------------------------------------------
+        $backup_path = $htaccess_file . '.pre-abuseipdb-4.0.10.' . time();
+        if (@copy($htaccess_file, $backup_path) === false) {
+            $this->logToPluginFile("Could not create backup at $backup_path — continuing with migration anyway.");
+        }
+
+        $bytes_written = file_put_contents($htaccess_file, $modified);
+        if ($bytes_written === false) {
+            error_log('AbuseIPDB migration: file_put_contents failed');
+            return false;
+        }
+
+        $ip_count = count($deny_ips);
+        $this->logToPluginFile(
+            "Migration to Apache 2.4 syntax: converted $ip_count IP(s) from <Files>/Deny-from to <RequireAll>/Require-not-ip. Backup at $backup_path."
+        );
+
+        return true;
+    }
+
+    /**
+     * Write an informational message to the AbuseIPDB plugin log file.
+     */
+    private function logToPluginFile(string $message): void
+    {
+        if (!defined('DIR_FS_CATALOG')) {
+            return; // No safe place to write; drop silently
+        }
+
+        $log_dir = DIR_FS_CATALOG . 'logs/';
+        if (defined('ABUSEIPDB_LOG_FILE_PATH') && ABUSEIPDB_LOG_FILE_PATH !== '') {
+            $configured = ABUSEIPDB_LOG_FILE_PATH;
+            // Normalize: if absolute, use as-is; otherwise treat as relative to catalog
+            if ($configured[0] === '/' || preg_match('/^[A-Z]:[\\\\\/]/i', $configured)) {
+                $log_dir = rtrim($configured, '/\\') . '/';
+            } else {
+                $log_dir = DIR_FS_CATALOG . rtrim($configured, '/\\') . '/';
+            }
+        }
+
+        if (!is_dir($log_dir)) {
+            @mkdir($log_dir, 0755, true);
+        }
+        if (!is_writable($log_dir)) {
+            return; // Can't write, drop silently
+        }
+
+        $log_file = $log_dir . 'abuseipdb_install_' . date('Y_m') . '.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $line = "[$timestamp] $message" . PHP_EOL;
+        @file_put_contents($log_file, $line, FILE_APPEND | LOCK_EX);
     }
 
     /**
@@ -422,7 +651,9 @@ class ScriptedInstaller extends ScriptedInstallBase
                 ('Enable Session Rate Limiting?', 'ABUSEIPDB_SESSION_RATE_LIMIT_ENABLED', 'false', 'Enable or disable session rate limiting to block IPs creating sessions too rapidly.', $this->configurationGroupId, NOW(), 420, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
                 ('Session Rate Limit Threshold', 'ABUSEIPDB_SESSION_RATE_LIMIT_THRESHOLD', '100', 'Maximum number of sessions allowed in the specified time window before blocking the IP.', $this->configurationGroupId, NOW(), 430, NULL, NULL),
                 ('Session Rate Limit Window (seconds)', 'ABUSEIPDB_SESSION_RATE_LIMIT_WINDOW', '60', 'Time window in seconds for counting sessions (e.g., 60 seconds).', $this->configurationGroupId, NOW(), 440, NULL, NULL),
-                ('Session Rate Limit Reset Window (seconds)', 'ABUSEIPDB_SESSION_RATE_LIMIT_RESET_WINDOW', '300', 'Time in seconds after which the session count resets if no new sessions are created (e.g., 300 seconds = 5 minutes).', $this->configurationGroupId, NOW(), 450, NULL, NULL);
+                ('Session Rate Limit Reset Window (seconds)', 'ABUSEIPDB_SESSION_RATE_LIMIT_RESET_WINDOW', '300', 'Time in seconds after which the session count resets if no new sessions are created (e.g., 300 seconds = 5 minutes).', $this->configurationGroupId, NOW(), 450, NULL, NULL),
+                ('Defer to External Triage', 'ABUSEIPDB_EXTERNAL_TRIAGE_DEFER', 'false', 'When enabled and a compatible companion plugin is installed, AbuseIPDB defers to the companion\'s triage decision before making an API call. Useful when running alongside another bot-detection system to avoid spending API quota on traffic that has already been challenged or blocked.<br><br>The integration works two ways:<br><strong>1. Per-request defer:</strong> if the companion challenged or blocked the current request, AbuseIPDB skips its API call for that request entirely.<br><strong>2. Persistent defer:</strong> AbuseIPDB also auto-detects the companion\'s deferrals table (advertised by the companion via its <code>AbuseIpdbDeferralHelper</code> class) and checks it for any IP it sees. Recently-deferred IPs render as a gray <em>DF</em> badge in Who\'s Online instead of a stale cached score — no API call burned. Deferral freshness is governed by AbuseIPDB\'s own cache TTL, so stale rows naturally age out.<br><br><strong>Requires:</strong> a companion plugin that registers an <code>AbuseIpdbDeferralHelper</code> class. If no such plugin is installed, this setting has no effect.<br><br>Default: <strong>false</strong>.<br>', $this->configurationGroupId, NOW(), 900, NULL, 'abuseipdb_cfg_external_triage_defer('),
+                ('Trust Cloudflare?', 'ABUSEIPDB_TRUST_CLOUDFLARE', 'false', 'When enabled, the real visitor IP is read from the <code>CF-Connecting-IP</code> header that Cloudflare sets at its edge, rather than from <code>REMOTE_ADDR</code> (which would be a Cloudflare edge IP). Required when your site is behind Cloudflare — without it, AbuseIPDB would check, log, and potentially block Cloudflare\'s own edge IPs instead of real visitors.<br><br><strong>SECURITY:</strong> only enable when your server is actually behind Cloudflare AND your firewall/security group restricts inbound traffic to Cloudflare\'s published IP ranges. Without that lockdown, an attacker could connect directly to your origin and forge the <code>CF-Connecting-IP</code> header to spoof any visitor IP.<br><br>Default: <strong>false</strong>.<br>', $this->configurationGroupId, NOW(), 905, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),');
                 "
             );
 
@@ -488,6 +719,19 @@ class ScriptedInstaller extends ScriptedInstallBase
                     set_function = 'zen_cfg_select_option(array(\'true\', \'false\'),'
                 WHERE configuration_key = 'ABUSEIPDB_DEBUG'"
             );
+
+            // Refresh the External Triage Defer description.
+            $this->executeInstallerSql(
+                "UPDATE " . TABLE_CONFIGURATION . "
+                SET
+                    configuration_title = 'Defer to External Triage',
+                    configuration_description = 'When enabled and a compatible companion plugin is installed, AbuseIPDB defers to the companion\'s triage decision before making an API call. Useful when running alongside another bot-detection system to avoid spending API quota on traffic that has already been challenged or blocked.<br><br>The integration works two ways:<br><strong>1. Per-request defer:</strong> if the companion challenged or blocked the current request, AbuseIPDB skips its API call for that request entirely.<br><strong>2. Persistent defer:</strong> AbuseIPDB also auto-detects the companion\'s deferrals table (advertised by the companion via its <code>AbuseIpdbDeferralHelper</code> class) and checks it for any IP it sees. Recently-deferred IPs render as a gray <em>DF</em> badge in Who\'s Online instead of a stale cached score — no API call burned. Deferral freshness is governed by AbuseIPDB\'s own cache TTL, so stale rows naturally age out.<br><br><strong>Requires:</strong> a companion plugin that registers an <code>AbuseIpdbDeferralHelper</code> class. If no such plugin is installed, this setting has no effect.<br><br>Default: <strong>false</strong>.<br>',
+                    configuration_group_id = $this->configurationGroupId,
+                    sort_order = 900,
+                    use_function = NULL,
+                    set_function = 'abuseipdb_cfg_external_triage_defer('
+                WHERE configuration_key = 'ABUSEIPDB_EXTERNAL_TRIAGE_DEFER'"
+            );
 			
             $this->executeInstallerSql(
                 "UPDATE " . TABLE_CONFIGURATION . "
@@ -519,7 +763,7 @@ class ScriptedInstaller extends ScriptedInstallBase
 				"UPDATE " . TABLE_CONFIGURATION . "
 			SET
 				configuration_title = 'Total Settings',
-				configuration_description = 'There should be <strong>51 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>',
+				configuration_description = 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>',
 				configuration_group_id = $this->configurationGroupId,
 				date_added = NOW(),
 				sort_order = 25,
@@ -533,7 +777,7 @@ class ScriptedInstaller extends ScriptedInstallBase
 			$this->executeInstallerSql(
                 "UPDATE " . TABLE_CONFIGURATION . "
                 SET
-                    configuration_description = 'There should be <strong>51 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>'
+                    configuration_description = 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>'
                 WHERE configuration_key = 'ABUSEIPDB_SETTINGS_COUNT'"
             );
 
@@ -558,11 +802,22 @@ class ScriptedInstaller extends ScriptedInstallBase
             );
             $sessionRateLimitEnabled = (!$result->EOF && $result->fields['configuration_value'] === 'true');
 
-            // Migrate .htaccess session blocks to the new format if session rate limiting is enabled
+            // Migrate .htaccess session blocks to the new format if session rate limiting is enabled.
+            // Wrap in try/catch so a migration failure (most often due to unusual .htaccess layouts)
+            // doesn't abort the upgrade. The version metadata MUST update so the Plugin Manager
+            // stops offering the upgrade in a loop.
             if ($sessionRateLimitEnabled) {
-                $this->migrateHtaccessSessionBlocks();
+                try {
+                    $this->migrateHtaccessSessionBlocks();
+                } catch (Throwable $e) {
+                    error_log('AbuseIPDB upgrade: .htaccess migration threw, continuing with version metadata update. Error: ' . $e->getMessage());
+                }
             }
-            
+
+            // Seed the blacklist file for upgrades from versions that
+            // predate auto-seeding (no-op if it already exists).
+            $this->seedBlacklistFile();
+
             // Update the plugin version and settings count in the configuration table
             $this->updatePluginMetadata($db);
 

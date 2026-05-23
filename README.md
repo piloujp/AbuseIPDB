@@ -1,9 +1,11 @@
-# AbuseIPDB v4.0.9 for Zen Cart 2.1.0 or later
+# AbuseIPDB v4.0.12 for Zen Cart 2.2.2 or later
 
 ## Prerequisites
 
-- Zen Cart 2.1.0 or later
-- PHP 7.4+ (recommended: PHP 8.x)
+- Zen Cart 2.2.2 or later
+- PHP 8.5.6+ recommended (PHP 8.0+ minimum)
+- Apache 2.4 (required for `.htaccess` session blocking via `Require not ip`)
+
 
 ## ABOUT THIS MODULE
 
@@ -31,6 +33,15 @@ Important: The following legacy files are automatically removed when v3.0.0 or l
 /includes/extra_datafiles/abuseipdb_filenames.php
 /includes/functions/abuseipdb_custom.php
 ```
+
+### Upgrading from v4.0.9 or earlier
+
+A few things changed in v4.0.10 through v4.0.12 that are handled automatically during upgrade, but worth knowing:
+
+- **`whos_online.php` no longer needs to be uploaded.** The Who's Online integration now auto-injects via Zen Cart's `ADMIN_WHOSONLINE_IP_LINKS` notifier. If you uploaded a customized `whos_online.php` for a previous version, you can revert it to the stock file.
+- **`includes/blacklist.txt` is auto-seeded on upgrade.** If the file already exists (because you created it for a previous version), it is left untouched and your IP entries are preserved.
+- **`.htaccess` session blocks are auto-migrated to Apache 2.4 syntax.** Existing `<Files *>` + `Deny from <IP>` entries are converted to `<RequireAll>` + `Require not ip` on upgrade. A timestamped backup is created before any change.
+- **New "Trust Cloudflare?" setting** reads the real visitor IP from `CF-Connecting-IP` when enabled. Off by default.
 
 ## Installation Instructions
 
@@ -66,10 +77,9 @@ zc_plugins/AbuseIPDB/vX.X.X/catalog/includes/auto_loaders/config.abuseipdb.php
 zc_plugins/AbuseIPDB/vX.X.X/catalog/includes/classes/observers/abuseipdb_observer.php
 zc_plugins/AbuseIPDB/vX.X.X/catalog/includes/classes/functions/abuseipdb_custom.php
 zc_plugins/AbuseIPDB/vX.X.X/installer/ScriptedInstaller.php
-
-Optional_Install/includes/blacklist.txt (if upgrading from below v3.0.0 this will be there already)
-Optional_Install/ZC_210/YOUR_ADMIN/whos_online.php
 ```
+
+The `includes/blacklist.txt` file is auto-created on install/upgrade (existing files preserved). The Who's Online integration is automatic and no longer requires uploading a customized `whos_online.php`.
 
 ## THINGS TO KNOW
 
@@ -107,7 +117,16 @@ Optional_Install/ZC_210/YOUR_ADMIN/whos_online.php
 4. IP Cleanup Feature: The module has an IP Cleanup feature that automatically deletes expired IP records. The cleanup process is triggered once per day by the first logged IP. This functionality can be enabled or disabled, and the IP record expiration period can be configured in the settings "IP Cleanup Period (in days)".  
 5. Manual Whitelisting and Blacklisting: The script checks if an IP is manually whitelisted or blacklisted before it does anything else. Manually whitelisted IPs will bypass the AbuseIPDB check, and manually blacklisted IPs will be immediately blocked. Enter the IP addresses separated by commas without any spaces, like this: `192.168.1.1,192.168.2.2,192.168.3.3`.
 6. Additional IP Blacklist File Option: The module offers an advanced IP blacklist feature. Administrators can enable or disable this functionality through the "Enable IP Blacklist File?" setting in the Zen Cart admin panel. Once enabled, the module examines a designated blacklist file for every incoming IP address. The blacklist file should list one complete or partial IP address per line. If there is a match, the corresponding IP will be promptly blocked, bypassing any other checks or scoring methods. This feature provides administrators with enhanced control over blocking specific IP addresses by utilizing complete or partial matches from the blacklist file.    
-7. Logging: If logging is enabled, log files are created when an IP is blocked, whether manually or based on the AbuseIPDB score. If API logging is enabled, a separate log file is also created for API calls. The location of these log files can be configured in the `ABUSEIPDB_LOG_FILE_PATH` setting in the Zen Cart admin panel.  
+7. Logging: If logging is enabled, log files are created when an IP is blocked, whether manually or based on the AbuseIPDB score. If API logging is enabled, a separate log file is also created for API calls. The location of these log files can be configured in the `ABUSEIPDB_LOG_FILE_PATH` setting in the Zen Cart admin panel.
+
+    **Log Directory Permissions**: The directory configured in `ABUSEIPDB_LOG_FILE_PATH` must be writable by the web server user. If logs aren't being written and you've confirmed logging is enabled in admin, this is almost always the cause.
+
+    The cleanest setup is shared group ownership so BOTH the web server user AND your admin user can read, write, and delete log files without ownership ceremony:
+
+    - Pick a shared group both users belong to (or add each user to the other's primary group with `usermod -a -G <group> <user>`).
+    - Set that group as the owner of the log directory.
+    - Set the directory to mode `2775` (group read/write/execute + setgid). The setgid bit ensures NEW log files created in this directory inherit the directory's group automatically — so whichever user creates a log file, the other user can still manage it via group permissions.
+
 8. Skipping IP Check for Known Spiders: If the "Allow Spiders?" setting (`ABUSEIPDB_SPIDER_ALLOW`) is enabled, known spiders will be skipped in the IP check and logging process, as they are not subject to AbuseIPDB scoring. This can be useful for avoiding unnecessary API calls and log entries for spider sessions.  
 9. Spider Detection: The script utilizes a file called `spiders.txt` provided by Zen Cart to identify known spiders, including search engine bots and web crawlers. It reads the user agent from the HTTP request and compares it against the entries in the spiders.txt file. If a match is found, indicating that the user agent corresponds to a known spider, the spider flag is set to true. This flag determines the script's behavior, enabling it to bypass certain checks or execute specific actions tailored for spider sessions.  
 
@@ -125,7 +144,8 @@ Optional_Install/ZC_210/YOUR_ADMIN/whos_online.php
   A legend at the top of the "Who's Online" page explains the meaning of each active shield color, showing only the colors for features that are currently enabled. This helps admins quickly identify and manage threats.    
 
     **Requirements for "Who's Online" Features**  
-	- Ensure the optional files `whos_online.php` and `blacklist.txt` are uploaded to your Zen Cart admin directory.  
+	- The Who's Online integration auto-injects via Zen Cart's `ADMIN_WHOSONLINE_IP_LINKS` notifier — no file uploads required.  
+	- The `includes/blacklist.txt` file is auto-created during install/upgrade (existing files preserved).  
 	- To display the 🚫 **Grey Circle with Slash** (blacklist button), the **"Enable IP Blacklist File"** setting must be set to `true` in the configuration.  
 
 11. **Flood Tracking and Flood Blocking (NEW!)**  
@@ -179,16 +199,16 @@ Optional_Install/ZC_210/YOUR_ADMIN/whos_online.php
     - **Adding IPs to `.htaccess`**:  
       - The plugin automatically adds blocked IPs to a dedicated section in `.htaccess`, marked by:  
         ```
-		<Files *>
+		<RequireAll>
         # AbuseIPDB Session Blocks Start
-        Deny from <IP>
+        Require not ip <IP>
         # AbuseIPDB Session Blocks End
-		</Files>
+		</RequireAll>
         ```
       - This section is created after the `RewriteEngine on` directive but before other rewrite rules to ensure block rules are processed early.  
-      - If the section doesn’t exist, the plugin will create it during the first block event.  
+      - If the section doesn't exist, the plugin will create it during the first block event.  
     - **Manual IP Removal**:  
-      - To unblock an IP, manually edit the `.htaccess` file and remove the corresponding `Deny from <IP>` line from the AbuseIPDB session blocks section.  
+      - To unblock an IP, manually edit the `.htaccess` file and remove the corresponding `Require not ip <IP>` line from the AbuseIPDB session blocks section.  
       - Save the file, and the IP will be able to access the site again.  
       - Note: After unblocking, the session count will continue to increment until the reset window expires (default: 300 seconds of inactivity). To immediately allow a fresh evaluation, manually reset the `session_count` and `session_window_start` for the IP in the `abuseipdb_cache` table.  
     - **Log File**:  
@@ -260,10 +280,9 @@ For support, please refer to the [Zen Cart forums](https://www.zen-cart.com/show
 
 ## WHAT'S NEW
 
-- **v4.0.9**: Bug Fixes
-- **v4.0.8**: Bug Fixes  
-- **v4.0.7**: Bug Fixes  
-- **v4.0.6**: Improved session rate limiting by using a new `abuseipdb_actions` table to queue IPs for blocking, reducing `.htaccess` write delays and preventing duplicate log entries.
+- **v4.0.12**: Apache 2.4 `.htaccess` syntax (auto-migrated). Zero-config Who's Online integration. Optional triage-defer integration for companion plugins. "Trust Cloudflare?" setting. Auto-seeded `includes/blacklist.txt`.  
+- **v4.0.9**: Bug fixes.  
+- **v4.0.6**: Improved session rate limiting by using a new `abuseipdb_actions` table to queue IPs for blocking, reducing `.htaccess` write delays and preventing duplicate log entries.  
 - **v4.0.5**: Updated admin dashboard widget to display Session Rate Limiting blocks in .htaccess for easy admin visibility when they occur.  
 - **v4.0.4**: Bug Fix - resolved country code population bug and removed duplicate config setting in installer.  
 - **v4.0.3**: Added session rate limiting to block IPs creating sessions too rapidly, with configurable threshold, time window, and reset period. IPs are blocked via `.htaccess` (Apache2 only), logged in `abuseipdb_session_blocks.log`, and require manual removal by the admin.  

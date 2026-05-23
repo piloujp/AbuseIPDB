@@ -2,14 +2,42 @@
 /**
  * Module: AbuseIPDB
  *
- * @requires    Zen Cart 2.1.0 or later, PHP 7.4+ (recommended: PHP 8.x)
+ * @requires    Zen Cart 2.2.2 or later, PHP 8.5.6+ recommended
  * @author      Marcopolo
- * @copyright   2023-2025
+ * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.7
- * @updated     6-8-2025
+ * @version     4.0.12
+ * @updated     05-23-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
+
+function getAbuseIpdbClientIp(): string {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
+    $resolved = '';
+
+    if (defined('ABUSEIPDB_TRUST_CLOUDFLARE') && ABUSEIPDB_TRUST_CLOUDFLARE === 'true') {
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            $candidate = trim($_SERVER['HTTP_CF_CONNECTING_IP']);
+            if (filter_var($candidate, FILTER_VALIDATE_IP) !== false) {
+                $resolved = $candidate;
+            }
+        }
+    }
+
+    if ($resolved === '' && !empty($_SERVER['REMOTE_ADDR'])) {
+        $candidate = trim($_SERVER['REMOTE_ADDR']);
+        if (filter_var($candidate, FILTER_VALIDATE_IP) !== false) {
+            $resolved = $candidate;
+        }
+    }
+
+    $cached = $resolved;
+    return $resolved;
+}
 
 // Function to get Abuse Confidence Score from AbuseIPDB
 function getAbuseConfidenceScore($ip, $api_key) {
@@ -180,79 +208,167 @@ function updateFloodPrefix($prefix, $prefixType, $countryCode, $currentTime) {
     }
 }
 
-// Function to add an IP to .htaccess
+// ============================================================================
+// .htaccess IP block management — Apache 2.4 syntax
+// ============================================================================
+// Uses `<RequireAll>` + `Require not ip <ip>` (Apache 2.4 modern syntax).
+//
+// Marker comments `# AbuseIPDB Session Blocks Start` and
+// `# AbuseIPDB Session Blocks End` delimit the managed section so:
+//   - new entries can be located and updated
+//   - admins can hand-edit the section if needed
+//
+// All write paths back up .htaccess before modifying. See
+// abuseipdb_backup_htaccess() below.
+// ----------------------------------------------------------------------------
+
+/**
+ * Create a timestamped backup of .htaccess before modification.
+ *
+ * Backups are written to the same directory with the pattern
+ *   .htaccess.pre-abuseipdb-<unix_timestamp>
+ * Returns the backup path on success, or false on failure.
+ *
+ * Note: failure to back up should NOT block the write attempt — admins may
+ * be on a host where they can write to .htaccess but not create siblings.
+ * Callers should log on backup failure but proceed with the write.
+ */
+function abuseipdb_backup_htaccess(): string|false {
+    $htaccess_file = DIR_FS_CATALOG . '.htaccess';
+    if (!file_exists($htaccess_file)) {
+        return false;
+    }
+    $backup_path = $htaccess_file . '.pre-abuseipdb-' . time();
+    if (@copy($htaccess_file, $backup_path) === false) {
+        return false;
+    }
+    // Best-effort retention: keep only the 3 most recent backups
+    $existing = @glob(DIR_FS_CATALOG . '.htaccess.pre-abuseipdb-*');
+    if (is_array($existing) && count($existing) > 3) {
+        // Sort by mtime descending, keep the first 3
+        usort($existing, function($a, $b) { return filemtime($b) <=> filemtime($a); });
+        for ($i = 3; $i < count($existing); $i++) {
+            @unlink($existing[$i]);
+        }
+    }
+    return $backup_path;
+}
+
+/**
+ * Add an IP to the AbuseIPDB session blocks in .htaccess using Apache 2.4
+ * `Require not ip` syntax inside a `<RequireAll>` block.
+ *
+ * Strategy:
+ *   1. Quick exit if the IP is already present anywhere in the file
+ *      (matches both old "Deny from <ip>" and new "Require not ip <ip>").
+ *   2. If a `<RequireAll>` block exists AND it has AbuseIPDB session
+ *      markers inside, insert before the End marker.
+ *   3. If a `<RequireAll>` block exists but no AbuseIPDB markers inside,
+ *      add the markers just before `</RequireAll>` and insert the IP.
+ *   4. If no `<RequireAll>` block exists, create a new one with
+ *      `Require all granted` and the AbuseIPDB markers, insert after the
+ *      first `RewriteEngine on` line (or append to EOF if none).
+ *
+ * Note: this function NEVER touches old `<Files *> Deny from` blocks.
+ * Those are handled separately by the upgrade migration. Once an admin
+ * has run the migration (or this is a fresh install), only `<RequireAll>`
+ * + `Require not ip` is used.
+ */
 function addIpToHtaccess($ip) {
     $htaccess_file = DIR_FS_CATALOG . '.htaccess';
-    
+
     // Check if file exists and is writable
     if (!file_exists($htaccess_file) || !is_writable($htaccess_file)) {
         return false;
     }
-    
+
     // Validate IP format (supports both IPv4 and IPv6)
     if (!filter_var($ip, FILTER_VALIDATE_IP)) {
         return false;
     }
-    
+
     // Read the current .htaccess content
     $htaccess_content = file_get_contents($htaccess_file);
     if ($htaccess_content === false) {
         return false;
     }
-    
-    // Check if IP already exists anywhere in the file (quick check)
-    if (strpos($htaccess_content, "Deny from $ip") !== false) {
-        return true; // IP already blocked
+
+    // Quick check: skip if IP is already present in any form.
+    // Matches: "Require not ip <ip>", "Deny from <ip>", "Allow from <ip>".
+    // Uses word boundaries on the IP to avoid partial matches like
+    // 1.2.3.4 matching 11.2.3.4. Quote-escape the IP for regex safety.
+    $ip_pattern = '/(?:Require\s+not\s+ip|Deny\s+from|Allow\s+from)\s+' . preg_quote($ip, '/') . '(?![\d\.])/';
+    if (preg_match($ip_pattern, $htaccess_content)) {
+        return true; // Already blocked (or explicitly allowed — leave alone)
     }
-    
-    // Define the regex pattern to match the AbuseIPDB block
-    // This matches the entire <Files *> block that contains the AbuseIPDB markers
-    // Made more flexible to handle varying whitespace and line breaks
-    $pattern = '/(<Files\s*\*>\s*)(.*?# AbuseIPDB Session Blocks Start\s*)(.*?)(# AbuseIPDB Session Blocks End\s*)(.*?)(<\/Files>\s*)/s';
-    
-    if (preg_match($pattern, $htaccess_content, $matches)) {
-        // Block exists - add IP to the deny rules section
-        $files_open = $matches[1];           // <Files *>
-        $before_start = $matches[2];         // Content + start marker
-        $deny_rules = $matches[3];           // The deny rules section
-        $end_marker = $matches[4];           // End marker
-        $after_end = $matches[5];            // Content after end marker
-        $files_close = $matches[6];          // </Files>
-        
-        // Add the new IP to the deny rules section
-        // Ensure proper line breaks - add newline if deny_rules doesn't end with one
-        $new_deny_rules = $deny_rules;
-        if (!empty($deny_rules) && substr($deny_rules, -1) !== "\n") {
-            $new_deny_rules .= "\n";
+
+    $new_line = "    Require not ip $ip\n";
+
+    // --- Strategy 1: existing <RequireAll> with AbuseIPDB markers inside ----
+    $marker_in_requireall_pattern =
+        '/(<RequireAll>)(.*?)(# AbuseIPDB Session Blocks Start\s*\n)(.*?)(# AbuseIPDB Session Blocks End\s*\n)(.*?)(<\/RequireAll>)/s';
+    if (preg_match($marker_in_requireall_pattern, $htaccess_content, $m)) {
+        $insertion = $m[1] . $m[2] . $m[3] . $m[4] . $new_line . $m[5] . $m[6] . $m[7];
+        $new_content = preg_replace($marker_in_requireall_pattern, $insertion, $htaccess_content, 1);
+
+        // Sanity: ensure tag balance didn't change
+        if (substr_count($new_content, '<RequireAll>') !== substr_count($new_content, '</RequireAll>')) {
+            error_log("addIpToHtaccess: <RequireAll> tag balance broken for IP $ip — aborting write.");
+            return false;
         }
-        $new_deny_rules .= "Deny from $ip\n";
-        
-        // Reconstruct the block with proper spacing
-        $new_block = $files_open . $before_start . $new_deny_rules . $end_marker . $after_end . $files_close;
-        
-        // Replace the old block with the new one
-        $new_content = preg_replace($pattern, $new_block, $htaccess_content);
-        
+
+        @abuseipdb_backup_htaccess();
+        return file_put_contents($htaccess_file, $new_content) !== false;
+    }
+
+    // --- Strategy 2: <RequireAll> exists but no AbuseIPDB markers inside ---
+    $bare_requireall_pattern = '/(<RequireAll>)(.*?)(<\/RequireAll>)/s';
+    if (preg_match($bare_requireall_pattern, $htaccess_content, $m)) {
+        // Insert markers + the new IP just before the closing </RequireAll>
+        $contents = $m[2];
+        // Ensure contents end with a newline before adding our block
+        if (!empty($contents) && substr($contents, -1) !== "\n") {
+            $contents .= "\n";
+        }
+        $new_section = $contents
+            . "    # AbuseIPDB Session Blocks Start\n"
+            . $new_line
+            . "    # AbuseIPDB Session Blocks End\n";
+        $replacement = $m[1] . $new_section . $m[3];
+        $new_content = preg_replace($bare_requireall_pattern, $replacement, $htaccess_content, 1);
+
+        if (substr_count($new_content, '<RequireAll>') !== substr_count($new_content, '</RequireAll>')) {
+            error_log("addIpToHtaccess: <RequireAll> tag balance broken for IP $ip — aborting write.");
+            return false;
+        }
+
+        @abuseipdb_backup_htaccess();
+        return file_put_contents($htaccess_file, $new_content) !== false;
+    }
+
+    // --- Strategy 3: no <RequireAll> block — create one ----------------------
+    $new_block = "\n<RequireAll>\n"
+        . "    Require all granted\n"
+        . "    # AbuseIPDB Session Blocks Start\n"
+        . $new_line
+        . "    # AbuseIPDB Session Blocks End\n"
+        . "</RequireAll>\n";
+
+    // Insert after RewriteEngine On if present, else append to EOF
+    if (preg_match('/(RewriteEngine\s+[Oo]n\s*\n)/', $htaccess_content, $matches, PREG_OFFSET_CAPTURE)) {
+        $insert_pos = $matches[0][1] + strlen($matches[0][0]);
+        $new_content = substr($htaccess_content, 0, $insert_pos) . $new_block . substr($htaccess_content, $insert_pos);
     } else {
-        // Block doesn't exist - create a new one
-        $new_block = "\n<Files *>\n# AbuseIPDB Session Blocks Start\nDeny from $ip\n# AbuseIPDB Session Blocks End\n</Files>\n";
-        
-        // Try to insert after RewriteEngine On (case insensitive), otherwise append to end
-        if (preg_match('/(RewriteEngine\s+[Oo]n\s*\n)/', $htaccess_content, $matches, PREG_OFFSET_CAPTURE)) {
-            $insert_pos = $matches[0][1] + strlen($matches[0][0]);
-            $new_content = substr($htaccess_content, 0, $insert_pos) . $new_block . substr($htaccess_content, $insert_pos);
-        } else {
-            // Append to the end
-            $new_content = rtrim($htaccess_content) . $new_block;
-        }
+        $new_content = rtrim($htaccess_content) . "\n" . $new_block;
     }
-    
-    // Write the updated content back to .htaccess
-    if (file_put_contents($htaccess_file, $new_content) === false) {
+
+    if (substr_count($new_content, '<RequireAll>') !== substr_count($new_content, '</RequireAll>')) {
+        error_log("addIpToHtaccess: <RequireAll> tag balance broken for IP $ip — aborting write.");
         return false;
     }
-    
-    return true;
+
+    @abuseipdb_backup_htaccess();
+    return file_put_contents($htaccess_file, $new_content) !== false;
 }
 
 // Function to check session rate limiting for an IP

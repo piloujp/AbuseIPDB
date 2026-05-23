@@ -1,11 +1,11 @@
 <?php
 return [
-    'pluginVersion' => 'v4.0.9',
+    'pluginVersion'       => 'v4.0.12',
     'pluginName' => "AbuseIPDB",
     'pluginDescription' => 'Protect your e-commerce website from abusive IP addresses',
     'pluginAuthor' => 'marcopolo',
     'pluginId' => 2371, // ID from Zen Cart forum
-    'zcVersions' => ['v210'],
+    'zcVersions' => ['v222'],
     'changelog' => '', // online URL (eg github release tag page, or changelog file there) or local filename only, ie: changelog.txt (in same dir as this manifest file)
     'github_repo' => 'https://github.com/CcMarc/AbuseIPDB', // url
     'pluginGroups' => [],

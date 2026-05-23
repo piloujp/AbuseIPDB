@@ -2,18 +2,24 @@
 /**
  * Module: AbuseIPDB
  *
- * @requires    Zen Cart 2.1.0 or later, PHP 7.4+ (recommended: PHP 8.x)
+ * @requires    Zen Cart 2.2.2 or later, PHP 8.5.6+ recommended
  * @author      Marcopolo
- * @copyright   2023-2025
+ * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.2
- * @updated     5-24-2025
+ * @version     4.0.12
+ * @updated     05-23-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
+
 
 function getAbuseIPDBBlockStatus($ip_address, $whos_online, $db) {
     $html = '';
     if (!defined('ABUSEIPDB_ENABLED') || ABUSEIPDB_ENABLED !== 'true') {
+        return '<td class="dataTableContentWhois align-top"></td>';
+    }
+
+    if (class_exists('zcObserverAbuseIPDBWhosOnline')
+        && !empty(zcObserverAbuseIPDBWhosOnline::$renderedIps[$ip_address])) {
         return '<td class="dataTableContentWhois align-top"></td>';
     }
 

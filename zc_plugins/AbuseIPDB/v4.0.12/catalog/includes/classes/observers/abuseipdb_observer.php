@@ -2,14 +2,15 @@
 /**
  * Module: AbuseIPDB
  *
- * @requires    Zen Cart 2.1.0 or later, PHP 7.4+ (recommended: PHP 8.x)
+ * @requires    Zen Cart 2.2.2 or later, PHP 8.5.6+ recommended
  * @author      Marcopolo
- * @copyright   2023-2025
+ * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.9
- * @updated     10-11-2025
+ * @version     4.0.12
+ * @updated     05-23-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
+
 
 /**
  * Toggle for testing:
@@ -90,6 +91,8 @@ class abuseipdb_observer extends base {
         if (ABUSEIPDB_ENABLED == 'true') {
             $pluginDir = $this->getZcPluginDir();
             require_once $pluginDir . 'includes/functions/abuseipdb_custom.php';
+            // Shared deferral-source check helper
+            require_once $pluginDir . 'includes/functions/abuseipdb_deferral_check.php';
 
             // Fallback to define table constant if not already defined
             if (!defined('TABLE_ABUSEIPDB_ACTIONS')) {
@@ -113,8 +116,13 @@ class abuseipdb_observer extends base {
                 $db->Execute("DELETE FROM " . TABLE_ABUSEIPDB_ACTIONS . ";");
             }
 
-            // Check the current visitor's IP for other blocking criteria
-            $ip = $_SERVER['REMOTE_ADDR'];
+            // Check the current visitor's IP for other blocking criteria.
+            // Use the Cloudflare-aware resolver so sites behind Cloudflare
+            // check the real visitor IP, not Cloudflare's edge. Falls back to
+            // REMOTE_ADDR when ABUSEIPDB_TRUST_CLOUDFLARE is off.
+            $ip = function_exists('getAbuseIpdbClientIp')
+                ? getAbuseIpdbClientIp()
+                : ($_SERVER['REMOTE_ADDR'] ?? '');
             $api_key = ABUSEIPDB_API_KEY;
             $threshold = (int)ABUSEIPDB_THRESHOLD;
             $cache_time = (int)ABUSEIPDB_CACHE_TIME;
@@ -179,6 +187,82 @@ class abuseipdb_observer extends base {
             // Check if the IP is whitelisted
             if (in_array($ip, $whitelisted_ips)) {
                 return;
+            }
+
+            // External Triage Deferral
+            // ----------------------------------------------------------------
+            // Optional integration point for a companion bot-detection plugin.
+            // When ABUSEIPDB_EXTERNAL_TRIAGE_DEFER is enabled AND a companion
+            // plugin has registered an AbuseIpdbDeferralHelper class with a
+            // shouldDefer($ip) static method, the companion gets first call.
+            // If it claims this request, skip the AbuseIPDB API call entirely.
+            //
+            // No-ops silently if no companion is installed or the setting is off.
+            if (defined('ABUSEIPDB_EXTERNAL_TRIAGE_DEFER')
+                && ABUSEIPDB_EXTERNAL_TRIAGE_DEFER === 'true'
+                && class_exists('AbuseIpdbDeferralHelper')
+                && method_exists('AbuseIpdbDeferralHelper', 'shouldDefer')) {
+                try {
+                    if (AbuseIpdbDeferralHelper::shouldDefer($ip) === true) {
+                        if ($enable_api_logging) {
+                            $log_file_path_api = $log_file_path . $log_file_name_api;
+                            $defer_msg = date('Y-m-d H:i:s') . ' IP address ' . $ip
+                                . ' API call deferred — companion plugin handled this request.' . PHP_EOL;
+                            file_put_contents($log_file_path_api, $defer_msg, FILE_APPEND);
+                        }
+                        if ($debug_mode == true) {
+                            error_log('AbuseIPDB: deferred to external triage for IP: ' . $ip);
+                        }
+                        return;
+                    }
+                } catch (Throwable $e) {
+                    // External integration error — fall through to normal AbuseIPDB
+                    // flow. Never let a companion plugin failure break the API check.
+                    if ($debug_mode == true) {
+                        error_log('AbuseIPDB: external triage deferral threw exception: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            // Table-based Deferral Check
+            // ----------------------------------------------------------------
+            // Broader companion-integration: consult any tables listed in
+            // ABUSEIPDB_DEFERRAL_SOURCES. Each companion plugin writes to its
+            // own deferrals table. AbuseIPDB checks for a row matching this IP
+            // newer than the cache TTL - if found, defer (no cache lookup, no
+            // API call).
+            //
+            // Complementary to the helper check above: the helper handles
+            // "is the companion challenging THIS request right now?"; the
+            // table check handles "was the companion challenging this IP in
+            // any recent request?"
+            if (function_exists('abuseipdb_check_deferral_sources')) {
+                try {
+                    $deferral = abuseipdb_check_deferral_sources($ip);
+                    if ($deferral !== null) {
+                        if ($enable_api_logging) {
+                            $log_file_path_api = $log_file_path . $log_file_name_api;
+                            $count_str = (isset($deferral['defer_count']) && (int)$deferral['defer_count'] > 0)
+                                ? ' count=' . (int)$deferral['defer_count']
+                                : '';
+                            $defer_msg = date('Y-m-d H:i:s') . ' IP address ' . $ip
+                                . ' API call deferred — table-based deferral from ' . $deferral['source']
+                                . ' (' . $deferral['decision'] . ',' . $count_str
+                                . ' last ' . $deferral['age_seconds'] . 's ago).' . PHP_EOL;
+                            file_put_contents($log_file_path_api, $defer_msg, FILE_APPEND);
+                        }
+                        if ($debug_mode == true) {
+                            error_log('AbuseIPDB: table-based deferral from '
+                                . $deferral['source'] . ' for IP: ' . $ip);
+                        }
+                        return;
+                    }
+                } catch (Throwable $e) {
+                    // Fail soft — fall through to normal API flow.
+                    if ($debug_mode == true) {
+                        error_log('AbuseIPDB: table-based deferral threw exception: ' . $e->getMessage());
+                    }
+                }
             }
 
             // Define the path to your blacklist file, and if it exists and ABUSEIPDB_BLACKLIST_ENABLE is true, load its content into the $file_blocked_ips array
