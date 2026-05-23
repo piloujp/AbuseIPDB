@@ -36,7 +36,7 @@ Important: The following legacy files are automatically removed when v3.0.0 or l
 
 ### Upgrading from v4.0.9 or earlier
 
-A few things changed in v4.0.10 through v4.0.12 that are handled automatically during upgrade, but worth knowing:
+A few things changed in v4.0.12 that are handled automatically during upgrade, but worth knowing:
 
 - **`whos_online.php` no longer needs to be uploaded.** The Who's Online integration now auto-injects via Zen Cart's `ADMIN_WHOSONLINE_IP_LINKS` notifier. If you uploaded a customized `whos_online.php` for a previous version, you can revert it to the stock file.
 - **`includes/blacklist.txt` is auto-seeded on upgrade.** If the file already exists (because you created it for a previous version), it is left untouched and your IP entries are preserved.
