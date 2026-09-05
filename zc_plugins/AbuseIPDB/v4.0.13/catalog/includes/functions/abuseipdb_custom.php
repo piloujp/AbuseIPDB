@@ -6,8 +6,8 @@
  * @author      Marcopolo
  * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.12
- * @updated     05-23-2026
+ * @version     4.0.13
+ * @updated     09-05-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
 
@@ -47,7 +47,10 @@ function getAbuseConfidenceScore($ip, $api_key) {
     // Initialize a new cURL session
     $curl = curl_init();
 
-    // Set the cURL options
+    // 4.0.13: capture the provider's rate-limit headers so the store knows its
+    // real remaining quota instead of guessing. Telemetry only — blocking
+    // behaviour is unchanged.
+    $rl_headers = [];
     curl_setopt_array($curl, [
         CURLOPT_RETURNTRANSFER => 1, // Return the transfer as a string
         CURLOPT_URL => $api_url . "?ipAddress=" . $ip . "&maxAgeInDays=30", // The URL to fetch
@@ -55,6 +58,17 @@ function getAbuseConfidenceScore($ip, $api_key) {
             "Key: " . $api_key,
             "Accept: application/json",
         ],
+        CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$rl_headers) {
+            $len = strlen($line);
+            if (strpos($line, ':') !== false) {
+                [$k, $v] = explode(':', $line, 2);
+                $k = strtolower(trim($k));
+                if (in_array($k, ['x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'retry-after'], true)) {
+                    $rl_headers[$k] = trim($v);
+                }
+            }
+            return $len;   // cURL requires the byte count
+        },
     ]);
 
     // Execute the cURL session
@@ -62,6 +76,9 @@ function getAbuseConfidenceScore($ip, $api_key) {
 
     // Get the HTTP status code
     $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+
+    // 4.0.13: persist the latest provider-reported quota (best effort, never fatal)
+    abuseipdb_quota_telemetry_store($rl_headers, (int)$http_code);
 
     // Close the cURL session (not needed in PHP 8.0+ where CurlHandle is auto-closed)
     if (PHP_VERSION_ID < 80000) {
@@ -83,6 +100,46 @@ function getAbuseConfidenceScore($ip, $api_key) {
 
     // Return failure indicator with empty country code if there was an issue retrieving the abuse confidence score
     return [-1, ''];
+}
+
+/**
+ * 4.0.13: store the last rate-limit headers returned by the API as JSON in the
+ * ABUSEIPDB_QUOTA_TELEMETRY configuration row. Only updates limit/remaining
+ * when the provider actually sent them (a 429 without headers keeps the
+ * previous values but records the code). Read by SignalNoiseBT Traffic Rhythm.
+ */
+function abuseipdb_quota_telemetry_store(array $headers, int $http_code): void
+{
+    global $db;
+    if (!isset($db) || !is_object($db) || !defined('TABLE_CONFIGURATION')) {
+        return;
+    }
+    try {
+        $r = $db->Execute("SELECT configuration_value FROM " . TABLE_CONFIGURATION . " WHERE configuration_key = 'ABUSEIPDB_QUOTA_TELEMETRY' LIMIT 1");
+        if ($r->EOF) {
+            return;   // row is created by the installer; nothing to update on pre-4.0.13 schemas
+        }
+        $decoded = json_decode((string)$r->fields['configuration_value'], true);
+        $t = is_array($decoded) ? $decoded : [];
+        if (isset($headers['x-ratelimit-limit'], $headers['x-ratelimit-remaining'])) {
+            $t['limit'] = (int)$headers['x-ratelimit-limit'];
+            $t['remaining'] = (int)$headers['x-ratelimit-remaining'];
+            if (isset($headers['x-ratelimit-reset'])) {
+                $reset = (int)$headers['x-ratelimit-reset'];
+                $t['reset'] = $reset > 1000000000 ? $reset : time() + $reset;   // absolute epoch or seconds-until
+            }
+        }
+        if (isset($headers['retry-after'])) {
+            $t['retry_after'] = (int)$headers['retry-after'];
+        }
+        $t['last_http_code'] = $http_code;
+        $t['updated_at'] = date('Y-m-d H:i:s');
+        $t['module_version'] = '4.0.13';
+        $db->Execute("UPDATE " . TABLE_CONFIGURATION . " SET configuration_value = '" . $db->prepare_input(json_encode($t)) . "'
+                      WHERE configuration_key = 'ABUSEIPDB_QUOTA_TELEMETRY'");
+    } catch (Throwable $e) {
+        // telemetry must never affect the lookup
+    }
 }
 
 // Function to format the log file name

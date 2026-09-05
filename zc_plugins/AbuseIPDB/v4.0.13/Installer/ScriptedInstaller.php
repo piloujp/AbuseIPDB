@@ -6,8 +6,8 @@
  * @author      Marcopolo
  * @copyright   2023-2026
  * @license     GNU General Public License (GPL) - https://www.gnu.org/licenses/gpl-3.0.html
- * @version     4.0.12
- * @updated     05-23-2026
+ * @version     4.0.13
+ * @updated     09-05-2026
  * @github      https://github.com/CcMarc/AbuseIPDB
  */
 
@@ -17,9 +17,9 @@ class ScriptedInstaller extends ScriptedInstallBase
 {
     protected string $configGroupTitle = 'AbuseIPDB Configuration';
 
-    public const ABUSEIPDB_CURRENT_VERSION = '4.0.12';
+    public const ABUSEIPDB_CURRENT_VERSION = '4.0.13';
 
-    private const SETTING_COUNT = 53;
+    private const SETTING_COUNT = 54;
     protected int $configurationGroupId;
 
     /**
@@ -62,7 +62,7 @@ class ScriptedInstaller extends ScriptedInstallBase
                 VALUES
 				('Plugin Version', 'ABUSEIPDB_VERSION', '0.0.0', 'The <em>AbuseIPDB</em> installed version.<br>', $this->configurationGroupId, NOW(), 10, NULL, 'zen_cfg_read_only('),
 				('Enable AbuseIPDB?', 'ABUSEIPDB_ENABLED', 'false', '', $this->configurationGroupId, NOW(), 20, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
-				('Total Settings', 'ABUSEIPDB_SETTINGS_COUNT', '0', 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>', $this->configurationGroupId, NOW(), 25, NULL, 'zen_cfg_read_only('),
+				('Total Settings', 'ABUSEIPDB_SETTINGS_COUNT', '0', 'There should be <strong>54 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>', $this->configurationGroupId, NOW(), 25, NULL, 'zen_cfg_read_only('),
 				('AbuseIPDB: API Key', 'ABUSEIPDB_API_KEY', '', 'This is the API key that you created during the set up of this plugin. You can find it on the AbuseIPDB webmaster/API section, <a href=\"https://www.abuseipdb.com/account/api\" target=\"_blank\">here</a> after logging in to AbuseIPDB.<br>', $this->configurationGroupId, NOW(), 30, NULL, NULL),
 				('AbuseIPDB: User ID', 'ABUSEIPDB_USERID', '', 'To find your AbuseIPDB User ID, visit <a href=\"https://www.abuseipdb.com/account/contributor\" target=\"_blank\">this page</a> and look in the \"HTML Markup\" section. Your User ID is the number at the end of the URL shown there — for example, <code>https://www.abuseipdb.com/user/XXXXXX</code>. Just enter the number (e.g., <code>XXXXXX</code>) here.<br>', $this->configurationGroupId, NOW(), 40, NULL, NULL),
 				('Score Threshold', 'ABUSEIPDB_THRESHOLD', '50', 'The minimum AbuseIPDB score to block an IP address.<br>', $this->configurationGroupId, NOW(), 50, NULL, NULL),
@@ -76,6 +76,7 @@ class ScriptedInstaller extends ScriptedInstallBase
 				('Test IP Addresses', 'ABUSEIPDB_TEST_IP', '', 'Enter the IP addresses separated by commas without any spaces to use for testing the plugin.<br>', $this->configurationGroupId, NOW(), 100, NULL, NULL),
 				('Enable Logging?', 'ABUSEIPDB_ENABLE_LOGGING', 'false', 'Enable or disable logging of blocked IP addresses.<br>', $this->configurationGroupId, NOW(), 110, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
 				('Enable Logging API Calls?', 'ABUSEIPDB_ENABLE_LOGGING_API', 'false', 'Enable or disable logging of API Calls.<br>', $this->configurationGroupId, NOW(), 120, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
+				('API Quota Telemetry (read-only)', 'ABUSEIPDB_QUOTA_TELEMETRY', '', '4.0.13: the last rate-limit headers the AbuseIPDB API returned (limit / remaining / reset), stored as JSON after every API call. Read by SignalNoiseBT Traffic Rhythm. Managed automatically; do not edit.<br>', $this->configurationGroupId, NOW(), 121, NULL, 'zen_cfg_read_only('),
 				('Enable Logging Spiders?', 'ABUSEIPDB_SPIDER_ALLOW_LOG', 'false', 'Enable or disable logging of allowed known spiders that bypass IP checks.<br>', $this->configurationGroupId, NOW(), 130, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
 				('Log File Format Block', 'ABUSEIPDB_LOG_FILE_FORMAT', 'abuseipdb_blocked_%Y_%m.log', 'The log file format for blocked IP addresses.<br>', $this->configurationGroupId, NOW(), 140, NULL, NULL),
 				('Log File Format Cache', 'ABUSEIPDB_LOG_FILE_FORMAT_CACHE', 'abuseipdb_blocked_cache_%Y_%m.log', 'The log file format for cache logging.<br>', $this->configurationGroupId, NOW(), 150, NULL, NULL),
@@ -628,6 +629,7 @@ class ScriptedInstaller extends ScriptedInstallBase
                 "INSERT IGNORE INTO " . TABLE_CONFIGURATION . "
                 (configuration_title, configuration_key, configuration_value, configuration_description, configuration_group_id, date_added, sort_order, use_function, set_function)
                 VALUES
+                ('API Quota Telemetry (read-only)', 'ABUSEIPDB_QUOTA_TELEMETRY', '', '4.0.13: the last rate-limit headers the AbuseIPDB API returned (limit / remaining / reset), stored as JSON after every API call. Read by SignalNoiseBT Traffic Rhythm. Managed automatically; do not edit.<br>', $this->configurationGroupId, NOW(), 121, NULL, 'zen_cfg_read_only('),
                 ('Enable High Score Cache Extension', 'ABUSEIPDB_HIGH_SCORE_CACHE_ENABLED', 'true', 'Enable extended cache time for IPs with high AbuseIPDB scores.', $this->configurationGroupId, NOW(), 61, NULL, 'zen_cfg_select_option(array(\'true\', \'false\'),'),
                 ('High Score Threshold', 'ABUSEIPDB_HIGH_SCORE_THRESHOLD', '100', 'Minimum AbuseIPDB score to use extended cache time.', $this->configurationGroupId, NOW(), 62, NULL, NULL),
                 ('Extended Cache Time', 'ABUSEIPDB_EXTENDED_CACHE_TIME', '604800', 'Time in seconds to cache high-scoring IPs (e.g., 604800 = 7 days).', $this->configurationGroupId, NOW(), 63, NULL, NULL),
@@ -763,7 +765,7 @@ class ScriptedInstaller extends ScriptedInstallBase
 				"UPDATE " . TABLE_CONFIGURATION . "
 			SET
 				configuration_title = 'Total Settings',
-				configuration_description = 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>',
+				configuration_description = 'There should be <strong>54 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>',
 				configuration_group_id = $this->configurationGroupId,
 				date_added = NOW(),
 				sort_order = 25,
@@ -777,7 +779,7 @@ class ScriptedInstaller extends ScriptedInstallBase
 			$this->executeInstallerSql(
                 "UPDATE " . TABLE_CONFIGURATION . "
                 SET
-                    configuration_description = 'There should be <strong>53 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>'
+                    configuration_description = 'There should be <strong>54 entries</strong> within the AbuseIPDB Configuration settings screen (including this one).<br><br>If any settings are missing, uninstall and reinstall the plugin to resolve.<br>'
                 WHERE configuration_key = 'ABUSEIPDB_SETTINGS_COUNT'"
             );
 

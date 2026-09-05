@@ -1,4 +1,4 @@
-# AbuseIPDB v4.0.12 for Zen Cart 2.2.2 or later
+# AbuseIPDB v4.0.13 for Zen Cart 2.2.2 or later
 
 ## Prerequisites
 
@@ -33,6 +33,10 @@ Important: The following legacy files are automatically removed when v3.0.0 or l
 /includes/extra_datafiles/abuseipdb_filenames.php
 /includes/functions/abuseipdb_custom.php
 ```
+
+### Upgrading from v4.0.12
+
+v4.0.13 adds one setting (`ABUSEIPDB_QUOTA_TELEMETRY`, internal) that the installer creates automatically. No file or `.htaccess` changes; a normal Plugin Manager **Upgrade** is all that is needed.
 
 ### Upgrading from v4.0.9 or earlier
 
@@ -168,6 +172,7 @@ The `includes/blacklist.txt` file is auto-created on install/upgrade (existing f
 15. **Automatic API Usage Failsafe**  
     - If the AbuseIPDB API quota is exceeded, API calls fail gracefully, and cached -1 scores trigger retries to obtain valid scores.  
     - IPs with -1 scores are treated as neutral and **will not** trigger flood or country blocking, ensuring site accessibility during API unavailability.  
+    - **Quota telemetry (v4.0.13):** after every API call the module records what AbuseIPDB reported about your daily quota — the limit, calls remaining, the reset time, and the HTTP status of the last call (including `429 Too Many Requests` and any `Retry-After`). It is stored in an internal setting (`ABUSEIPDB_QUOTA_TELEMETRY`, not shown on the settings page) and is available to any companion tool that wants to display or act on real quota figures instead of estimating them. The module itself does not change its blocking decisions based on this data; it is observability only, and it costs no extra API calls.  
 
 16. **Expanded Admin Settings**  
     - New settings added:  
@@ -280,6 +285,7 @@ For support, please refer to the [Zen Cart forums](https://www.zen-cart.com/show
 
 ## WHAT'S NEW
 
+- **v4.0.13**: Quota telemetry — the module now captures the daily-quota headers AbuseIPDB returns with every API response (limit, remaining, reset, and 429 / `Retry-After` when exhausted) and stores them in an internal setting for companion tools to read. No behaviour change to blocking; no extra API calls. One internal setting added; normal Upgrade.  
 - **v4.0.12**: Apache 2.4 `.htaccess` syntax (auto-migrated). Zero-config Who's Online integration. Optional triage-defer integration for companion plugins. "Trust Cloudflare?" setting. Auto-seeded `includes/blacklist.txt`.  
 - **v4.0.9**: Bug fixes.  
 - **v4.0.6**: Improved session rate limiting by using a new `abuseipdb_actions` table to queue IPs for blocking, reducing `.htaccess` write delays and preventing duplicate log entries.  
